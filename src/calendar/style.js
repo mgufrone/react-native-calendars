@@ -23,6 +23,21 @@ export default function getStyle(theme={}) {
     dayContainer: {
       width: 32
     },
+    marker: {
+      padding: 3,
+      flexDirection: 'row',
+      marginVertical: 1,
+    },
+    markerText: {
+      fontSize: 13,
+      color: '#fff',
+    },
+    markerStart: {
+      borderTopLeftRadius: 5,
+    },
+    markerEnd: {
+      borderBottomRightRadius: 5,
+    },
     ...(theme[STYLESHEET_ID] || {})
   });
 }

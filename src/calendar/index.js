@@ -1,7 +1,10 @@
 import React, {Component} from 'react';
 import {
   View,
-  ViewPropTypes
+  Text,
+  Dimensions,
+  ViewPropTypes,
+  TouchableOpacity
 } from 'react-native';
 import PropTypes from 'prop-types';
 
@@ -16,6 +19,15 @@ import MultiPeriodDay from './day/multi-period';
 import SingleDay from './day/custom';
 import CalendarHeader from './header';
 import shouldComponentUpdate from './updater';
+const COLORS = [
+  '#2e7d32',
+  '#f9a825',
+  '#c62828',
+  '#6a1b9a',
+  '#1565c0',
+];
+const { width } = Dimensions.get('window');
+const calculateTextWidth = (text, fontSize) => text.length * fontSize * (2/3);
 
 //Fallback when RN version is < 0.44
 const viewPropTypes = ViewPropTypes || View.propTypes;
@@ -41,7 +53,7 @@ class Calendar extends Component {
     // If firstDay=1 week starts from Monday. Note that dayNames and dayNamesShort should still start from Sunday.
     firstDay: PropTypes.number,
 
-    // Date marking style [simple/period/multi-dot/multi-period]. Default = 'simple' 
+    // Date marking style [simple/period/multi-dot/multi-period]. Default = 'simple'
     markingType: PropTypes.string,
 
     // Hide month navigation arrows. Default = false
@@ -82,13 +94,14 @@ class Calendar extends Component {
     super(props);
     this.style = styleConstructor(this.props.theme);
     let currentMonth;
+    let currentYear;
     if (props.current) {
       currentMonth = parseDate(props.current);
     } else {
       currentMonth = XDate();
     }
     this.state = {
-      currentMonth
+      currentMonth,
     };
 
     this.updateMonth = this.updateMonth.bind(this);
@@ -96,6 +109,70 @@ class Calendar extends Component {
     this.pressDay = this.pressDay.bind(this);
     this.longPressDay = this.longPressDay.bind(this);
     this.shouldComponentUpdate = shouldComponentUpdate;
+    this.currentEvents = this.getCurrentEvents(this.props);
+  }
+
+
+  getCurrentEvents(props) {
+    if (!props.events) {
+      return [];
+    }
+    return props.events
+      .filter((item) => {
+        const [start, end] = [item.start, item.end].map(parseDate);
+        const startOfTheMonth = parseDate(this.state.currentMonth.toString('YYYY-MM-01'));
+        const endOfTheMonth = parseDate(startOfTheMonth).addMonths(1).addDays(-1);
+        return start.diffDays(startOfTheMonth) <= 0 && end.diffDays(endOfTheMonth) <= 0;
+      })
+      .map((item, key) => {
+      if (!item.color || item.color === '') {
+        item.color = COLORS[key % COLORS.length];
+      }
+      // calculate if the span of the text is fit to the view.
+      // the tolerance would be based on how much space the event have on the sequence of the week
+      // if the start day have a small space, it should be put on another longer week.
+      // if the space of the next week is the same as the first one, it will make an ellipsis text
+      const textWidth = calculateTextWidth(item.text, this.style.markerText.fontSize) + 24;
+      const dayWidth = Math.floor(width / 7);
+      const startDate = parseDate(item.start);
+      const endDate = parseDate(item.end);
+      let [weekStart, weekEnd] = [startDate, endDate].map((item) => item.getWeek());
+      let weekDay = startDate.getDay();
+      let weekDayEnd = endDate.getDay();
+      const spaceCellStart = 7 - weekDay;
+      let currentWeek = weekStart + (weekDay === 0 ? 1 : 0);
+      let totalWidth = (dayWidth * spaceCellStart);
+      let shouldEllipsis = totalWidth - textWidth < 0;
+      const originalWeekStart = currentWeek;
+      const originalWeekEnd = weekEnd;
+        if (weekDay !== 0) {
+          weekStart -= 1;
+        }
+        if (weekDayEnd === 0) {
+          weekEnd += 1;
+          weekDayEnd += 1;
+        }
+
+      if (shouldEllipsis && originalWeekStart !== originalWeekEnd && totalWidth < textWidth) {
+        if (originalWeekStart < originalWeekEnd) {
+          currentWeek = originalWeekStart + (weekDay === 0 ? 2 : 1);
+          shouldEllipsis = false;
+        } else {
+          if (weekDayEnd > spaceCellStart) {
+            currentWeek = originalWeekEnd;
+            shouldEllipsis = (dayWidth * weekEndDay) - textWidth < 0;
+          }
+        }
+      }
+      return ({
+        ...item,
+        color: item.color || COLORS[key % COLORS.length],
+        showTextAt: currentWeek,
+        weekStart,
+        weekEnd,
+        shouldEllipsis,
+      });
+    });
   }
 
   componentWillReceiveProps(nextProps) {
@@ -105,6 +182,7 @@ class Calendar extends Component {
         currentMonth: current.clone()
       });
     }
+    this.currentEvents = this.getCurrentEvents(nextProps);
   }
 
   updateMonth(day, doNotTriggerListeners) {
@@ -237,8 +315,55 @@ class Calendar extends Component {
     if (this.props.showWeekNumbers) {
       week.unshift(this.renderWeekNumber(days[days.length - 1].getWeek()));
     }
+    const result = [
+      <View style={this.style.week} key={id}>{week}</View>,
+    ];
+    const events = this.currentEvents;
+    if (events && events.length > 0) {
+      const eventsThisWeek = events.filter((event) => {
+        const startDate = parseDate(event.start);
+        const endDate = parseDate(event.end);
+        return endDate.diffDays(days[0]) <= 0 && startDate.diffDays(days[days.length - 1]) >= 0;
+      }).map((event) => ({
+        ...event,
+        diffStart: parseDate(event.start).diffDays(days[0]),
+        diffEnd: parseDate(event.end).diffDays(days[days.length - 1])
+      }));
+      if (eventsThisWeek.length > 0) {
+        eventsThisWeek.forEach((item) => {
+          const eventStyle = {
+            flexDirection: 'row',
+          };
+          const cellBefore = item.diffEnd <= 0 && item.diffStart <= 0 ? -(item.diffStart) : 0;
+          const cellAfter = item.diffStart >= 0 && item.diffEnd >= 0 ? (item.diffEnd) : 0;
+          result.push(
+            (<View style={eventStyle}>
+              {cellBefore > 0 && <View style={{ flex : cellBefore, minHeight: 10 }} />}
+              <TouchableOpacity
+                style={[
+                { flex: 7 - (cellBefore + cellAfter), backgroundColor: item.color},
+                item.weekStart === days[0].getWeek() ? this.style.markerStart : null,
+                item.weekEnd === days[days.length - 1].getWeek() ? this.style.markerEnd : null,
+                this.style.marker,
+              ]}
+                onPress={() => this.props.onMarkerPress(item)}
+              >
+                {item.weekStart === days[0].getWeek() ? item.before : null}
+                <Text style={this.style.markerText}>
+                  {item.showTextAt === days[0].getWeek() + 1  ?
+                  (item.shouldEllipsis ? `${item.text.substr(0, 10)}...` : item.text) : ' '
+                  }
+                </Text>
+                {item.weekEnd === days[days.length - 1].getWeek() ? item.after : null}
+              </TouchableOpacity>
+              {cellAfter > 0 && <View style={{ flex : cellAfter, minHeight: 10 }} />}
+            </View>)
+          );
+        });
+      }
+    }
 
-    return (<View style={this.style.week} key={id}>{week}</View>);
+    return result;
   }
 
   render() {

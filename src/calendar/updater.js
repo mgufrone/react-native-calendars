@@ -46,6 +46,12 @@ export default function shouldComponentUpdate(nextProps, nextState) {
       field: 'current'
     };
   }
+  if (nextProps.events.length !== this.props.events.length) {
+    shouldUpdate = {
+      update: true,
+      field: 'events'
+    };
+  }
   //console.log(shouldUpdate.field, shouldUpdate.update);
   return shouldUpdate.update;
 }
