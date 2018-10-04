@@ -1,7 +1,9 @@
-import {StyleSheet} from 'react-native';
+import {StyleSheet, Dimensions} from 'react-native';
+
 import * as defaultStyle from '../style';
 
 const STYLESHEET_ID = 'stylesheet.calendar.main';
+const { width } = Dimensions.get('window');
 
 export default function getStyle(theme={}) {
   const appStyle = {...defaultStyle, ...theme};
@@ -14,9 +16,11 @@ export default function getStyle(theme={}) {
     monthView: {
       backgroundColor: appStyle.calendarBackground
     },
-    week: {
+    weekContainer: {
       marginTop: 7,
       marginBottom: 7,
+    },
+    week: {
       flexDirection: 'row',
       justifyContent: 'space-around'
     },
@@ -24,19 +28,25 @@ export default function getStyle(theme={}) {
       width: 32
     },
     marker: {
-      padding: 3,
       flexDirection: 'row',
-      marginVertical: 1,
+    },
+    markerContainer: {
+      flex: 1,
+      paddingVertical: 3,
+      paddingHorizontal: 2,
     },
     markerText: {
-      fontSize: 13,
+      fontSize: 14,
+      marginLeft: 2,
       color: '#fff',
     },
     markerStart: {
-      borderTopLeftRadius: 5,
+      borderBottomLeftRadius: 5,
+      marginLeft: 9,
     },
     markerEnd: {
-      borderBottomRightRadius: 5,
+      borderTopRightRadius: 5,
+      marginRight: 9,
     },
     ...(theme[STYLESHEET_ID] || {})
   });

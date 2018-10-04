@@ -46,7 +46,7 @@ export default function shouldComponentUpdate(nextProps, nextState) {
       field: 'current'
     };
   }
-  if (nextProps.events.length !== this.props.events.length) {
+  if (JSON.stringify(nextProps.events) !== JSON.stringify(this.props.events)) {
     shouldUpdate = {
       update: true,
       field: 'events'

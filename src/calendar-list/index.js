@@ -149,7 +149,6 @@ class CalendarList extends Component {
   }
 
   onViewableItemsChanged({viewableItems}) {
-    console.log({ viewableItems });
     function rowIsCloseToViewable(index, distance) {
       for (let i = 0; i < viewableItems.length; i++) {
         if (Math.abs(index - parseInt(viewableItems[i].index)) <= distance) {
