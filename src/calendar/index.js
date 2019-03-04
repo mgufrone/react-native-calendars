@@ -167,7 +167,7 @@ class Calendar extends Component {
             } else {
               if (weekDayEnd > spaceCellStart) {
                 currentWeek = originalWeekEnd;
-                shouldEllipsis = (dayWidth * weekEndDay) - textWidth < 0;
+                shouldEllipsis = (dayWidth * weekDayEnd) - textWidth < 0;
               }
             }
           }
