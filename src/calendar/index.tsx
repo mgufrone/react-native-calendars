@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import XDate from 'xdate';
 import isEmpty from 'lodash/isEmpty';
 import React, {useRef, useState, useEffect, useCallback, useMemo} from 'react';
-import {AccessibilityInfo, View, ViewStyle, StyleProp} from 'react-native';
+import {AccessibilityInfo, View, Text, TouchableOpacity, Dimensions, ViewStyle, StyleProp} from 'react-native';
 // @ts-expect-error
 import GestureRecognizer, {swipeDirections} from 'react-native-swipe-gestures';
 import constants from '../commons/constants';
@@ -10,7 +10,7 @@ import {page, isGTE, isLTE, sameMonth} from '../dateutils';
 import {xdateToData, parseDate, toMarkingFormat} from '../interface';
 import {getState} from '../day-state-manager';
 import {extractHeaderProps, extractDayProps} from '../componentUpdater';
-import {DateData, Theme, MarkedDates, ContextProp} from '../types';
+import {DateData, Theme, MarkedDates, ContextProp, EventData} from '../types';
 import {useDidUpdate} from '../hooks';
 import styleConstructor from './style';
 import CalendarHeader, {CalendarHeaderProps} from './header';
@@ -60,6 +60,10 @@ export interface CalendarProps extends CalendarHeaderProps, DayProps {
   disabledByWeekDays?: number[];
   /** Test ID */
   testID?: string;
+  /** Events to render as colored bars on calendar days */
+  events?: EventData[];
+  /** Handler for when an event marker is pressed */
+  onMarkerPress?: (event: EventData) => void;
 }
 
 /**
@@ -67,6 +71,10 @@ export interface CalendarProps extends CalendarHeaderProps, DayProps {
  * @example: https://github.com/wix/react-native-calendars/blob/master/example/src/screens/calendars.js
  * @gif: https://github.com/wix/react-native-calendars/blob/master/demo/assets/calendar.gif
  */
+const CALENDAR_COLORS = ['#2e7d32', '#f9a825', '#c62828', '#6a1b9a', '#1565c0'];
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
+const calculateTextWidth = (text: string, fontSize: number) => text.length * fontSize * (2 / 3);
+
 const Calendar = (props: CalendarProps & ContextProp) => {
   const {
     initialDate,
@@ -91,12 +99,81 @@ const Calendar = (props: CalendarProps & ContextProp) => {
     accessibilityElementsHidden,
     importantForAccessibility,
     testID,
-    style: propsStyle
+    style: propsStyle,
+    events,
+    onMarkerPress
   } = props;
   const [currentMonth, setCurrentMonth] = useState(current || initialDate ? parseDate(current || initialDate) : new XDate());
   const style = useRef(styleConstructor(theme));
   const header = useRef();
   const weekNumberMarking = useRef({disabled: true, disableTouchEvent: true});
+
+  const currentEvents = useMemo(() => {
+    if (!events || !events.length) return [];
+    return [...events]
+      .filter((item) => {
+        const start = parseDate(item.start);
+        const end = parseDate(item.end);
+        const startOfTheMonth = parseDate(currentMonth.toString('yyyy-MM-01'));
+        const endOfTheMonth = parseDate(startOfTheMonth.clone().addMonths(1).addDays(-1));
+        const sameYear = start.getFullYear() === startOfTheMonth.getFullYear() || end.getFullYear() === endOfTheMonth.getFullYear();
+        const weekInRange = !(start.getTime() > endOfTheMonth.getTime() || end.getTime() < startOfTheMonth.getTime());
+        return (sameYear && weekInRange);
+      })
+      .sort((a, b) => parseDate(a.start).getTime() - parseDate(b.start).getTime())
+      .map((item, key) => {
+        const evt = {...item};
+        if (!evt.color || evt.color === '') {
+          evt.color = CALENDAR_COLORS[key % CALENDAR_COLORS.length];
+        }
+        const textWidth = calculateTextWidth(evt.text, 12) + 40;
+        const dayWidth = Math.floor(SCREEN_WIDTH / 7);
+        const startDate = parseDate(evt.start);
+        const endDate = parseDate(evt.end);
+        let weekDay = startDate.getDay();
+        const weekDayEnd = endDate.getDay();
+        const spaceCellStart = 7 - weekDay;
+        let currentWeek = startDate.getWeek() + (weekDay === 0 ? 1 : 0);
+        const totalWidth = (dayWidth * spaceCellStart);
+        let shouldEllipsis = totalWidth - textWidth < 0;
+        const originalWeekStart = currentWeek;
+        const originalWeekEnd = endDate.getWeek();
+        if (shouldEllipsis && originalWeekStart !== originalWeekEnd && totalWidth < textWidth) {
+          if (originalWeekStart < originalWeekEnd) {
+            currentWeek = originalWeekStart + (weekDay === 0 ? 2 : 1);
+            shouldEllipsis = false;
+          } else {
+            if (weekDayEnd > spaceCellStart) {
+              currentWeek = originalWeekEnd;
+              shouldEllipsis = (dayWidth * weekDayEnd) - textWidth < 0;
+            }
+          }
+        }
+        return {
+          ...evt,
+          showTextAt: currentWeek,
+          weekStart: startDate.getWeek(),
+          weekEnd: endDate.getWeek(),
+          shouldEllipsis,
+          startDate,
+          endDate,
+        };
+      });
+  }, [events, currentMonth]);
+
+  const eventsByDay = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    currentEvents.forEach((evt) => {
+      const d = evt.startDate.clone();
+      while (d.diffDays(evt.endDate) <= 0) {
+        const key = toMarkingFormat(d);
+        if (!map[key]) map[key] = [];
+        map[key].push(evt);
+        d.addDays(1);
+      }
+    });
+    return map;
+  }, [currentEvents]);
 
   useEffect(() => {
     if (initialDate) {
@@ -196,6 +273,7 @@ const Calendar = (props: CalendarProps & ContextProp) => {
     const dayProps = extractDayProps(props);
     const dateString = toMarkingFormat(day);
     const disableDaySelection = isEmpty(props.context);
+    const dayEvents = eventsByDay[dateString] || [];
 
     return (
       <View style={style.current.dayContainer} key={id}>
@@ -208,6 +286,26 @@ const Calendar = (props: CalendarProps & ContextProp) => {
           onPress={_onDayPress}
           onLongPress={onLongPressDay}
         />
+        {dayEvents.map((evt: any, i: number) => {
+          const weekNum = day.getWeek();
+          const showText = evt.showTextAt === weekNum;
+          return (
+            <TouchableOpacity
+              key={i}
+              style={[style.current.marker, {backgroundColor: evt.color}]}
+              onPress={() => onMarkerPress?.(evt)}
+            >
+              {showText && (
+                <Text
+                  numberOfLines={1}
+                  style={style.current.markerText}
+                >
+                  {evt.shouldEllipsis ? evt.text.substring(0, 8) + '...' : evt.text}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
     );
   };

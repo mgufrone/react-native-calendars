@@ -11,6 +11,12 @@ export type MarkedDates = {
 };
 export type DayState = 'selected' | 'disabled' | 'inactive' | 'today' | '';
 export type Direction = 'left' | 'right';
+export interface EventData {
+  start: string;
+  end: string;
+  text: string;
+  color?: string;
+}
 export type DateData = {
   year: number;
   month: number;
