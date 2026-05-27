@@ -2,7 +2,7 @@ import PropTypes from 'prop-types';
 import XDate from 'xdate';
 import isEmpty from 'lodash/isEmpty';
 import React, {useRef, useState, useEffect, useCallback, useMemo} from 'react';
-import {AccessibilityInfo, View, Text, TouchableOpacity, Dimensions, ViewStyle, StyleProp} from 'react-native';
+import {AccessibilityInfo, View, Text, TouchableOpacity, Dimensions, Platform, ViewStyle, StyleProp} from 'react-native';
 // @ts-expect-error
 import GestureRecognizer, {swipeDirections} from 'react-native-swipe-gestures';
 import constants from '../commons/constants';
@@ -126,18 +126,27 @@ const Calendar = (props: CalendarProps & ContextProp) => {
         if (!evt.color || evt.color === '') {
           evt.color = CALENDAR_COLORS[key % CALENDAR_COLORS.length];
         }
-        const textWidth = calculateTextWidth(evt.text, 12) + 40;
+        const textWidth = calculateTextWidth(evt.text, 14) + 40;
         const dayWidth = Math.floor(SCREEN_WIDTH / 7);
         const startDate = parseDate(evt.start);
         const endDate = parseDate(evt.end);
+        let weekStart = startDate.getWeek();
+        let weekEnd = endDate.getWeek();
         let weekDay = startDate.getDay();
-        const weekDayEnd = endDate.getDay();
+        let weekDayEnd = endDate.getDay();
         const spaceCellStart = 7 - weekDay;
-        let currentWeek = startDate.getWeek() + (weekDay === 0 ? 1 : 0);
+        let currentWeek = weekStart + (weekDay === 0 ? 1 : 0);
         const totalWidth = (dayWidth * spaceCellStart);
         let shouldEllipsis = totalWidth - textWidth < 0;
         const originalWeekStart = currentWeek;
-        const originalWeekEnd = endDate.getWeek();
+        const originalWeekEnd = weekEnd;
+        if (weekDay !== 0) {
+          weekStart -= 1;
+        }
+        if (weekDayEnd === 0) {
+          weekEnd += 1;
+          weekDayEnd += 1;
+        }
         if (shouldEllipsis && originalWeekStart !== originalWeekEnd && totalWidth < textWidth) {
           if (originalWeekStart < originalWeekEnd) {
             currentWeek = originalWeekStart + (weekDay === 0 ? 2 : 1);
@@ -149,31 +158,55 @@ const Calendar = (props: CalendarProps & ContextProp) => {
             }
           }
         }
+        // Calculate which month the event should be flagged in (for month-boundary crossovers)
+        let supposedMonth = currentMonth.getMonth();
+        let endSupposedMonth = currentMonth.getMonth();
+
+        const endMonth = currentMonth.clone().addMonths(1).addDays(-1);
+        const startWeekOfEndMonth = endMonth.clone().setDate(endMonth.getDate() - endMonth.getDay());
+        const endOfWeek = startWeekOfEndMonth.clone().addDays(6);
+
+        const startMonth = currentMonth.clone().setDate(1);
+        const startWeekOfStartMonth = startMonth.clone().addDays(-(startMonth.getDay()));
+        const endWeekOfStartMonth = startWeekOfStartMonth.clone().addDays(6);
+
+        if (startDate.getTime() >= startWeekOfEndMonth.getTime() && endDate.getTime() >= endMonth.getTime()) {
+          const startGap = Math.abs(startDate.diffDays(endMonth)) + 0.5;
+          let end = endDate.clone();
+          if (end.getTime() > endOfWeek.getTime()) {
+            end = endOfWeek
+          }
+          const endGap = Math.abs(endMonth.diffDays(end)) - 0.5;
+          if (endGap > startGap) {
+            supposedMonth = endOfWeek.getMonth();
+          }
+          endSupposedMonth = endOfWeek.getMonth();
+        }
+        if (startMonth.getTime() >= startDate.getTime() && startMonth.getTime() <= endDate.getTime()) {
+          const startGap = Math.abs(startDate.diffDays(startMonth)) - 0.5;
+          let end = endDate.clone();
+          if (end.getTime() > endWeekOfStartMonth.getTime()) {
+            end = endWeekOfStartMonth;
+          }
+          const endGap = Math.abs(startMonth.diffDays(end)) + 0.5;
+          if (startGap > endGap) {
+            supposedMonth = startWeekOfStartMonth.getMonth();
+          }
+        }
+
         return {
           ...evt,
+          color: evt.color || CALENDAR_COLORS[key % CALENDAR_COLORS.length],
           showTextAt: currentWeek,
-          weekStart: startDate.getWeek(),
-          weekEnd: endDate.getWeek(),
-          shouldEllipsis,
+          weekStart,
+          weekEnd,
+          shouldEllipsis: shouldEllipsis || Math.abs(startDate.diffDays(endDate)) <= 2,
+          flagAt: [weekStart, supposedMonth, endSupposedMonth],
           startDate,
           endDate,
         };
       });
   }, [events, currentMonth]);
-
-  const eventsByDay = useMemo(() => {
-    const map: Record<string, any[]> = {};
-    currentEvents.forEach((evt) => {
-      const d = evt.startDate.clone();
-      while (d.diffDays(evt.endDate) <= 0) {
-        const key = toMarkingFormat(d);
-        if (!map[key]) map[key] = [];
-        map[key].push(evt);
-        d.addDays(1);
-      }
-    });
-    return map;
-  }, [currentEvents]);
 
   useEffect(() => {
     if (initialDate) {
@@ -273,7 +306,6 @@ const Calendar = (props: CalendarProps & ContextProp) => {
     const dayProps = extractDayProps(props);
     const dateString = toMarkingFormat(day);
     const disableDaySelection = isEmpty(props.context);
-    const dayEvents = eventsByDay[dateString] || [];
 
     return (
       <View style={style.current.dayContainer} key={id}>
@@ -286,26 +318,6 @@ const Calendar = (props: CalendarProps & ContextProp) => {
           onPress={_onDayPress}
           onLongPress={onLongPressDay}
         />
-        {dayEvents.map((evt: any, i: number) => {
-          const weekNum = day.getWeek();
-          const showText = evt.showTextAt === weekNum;
-          return (
-            <TouchableOpacity
-              key={i}
-              style={[style.current.marker, {backgroundColor: evt.color}]}
-              onPress={() => onMarkerPress?.(evt)}
-            >
-              {showText && (
-                <Text
-                  numberOfLines={1}
-                  style={style.current.markerText}
-                >
-                  {evt.shouldEllipsis ? evt.text.substring(0, 8) + '...' : evt.text}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
       </View>
     );
   };
@@ -315,15 +327,177 @@ const Calendar = (props: CalendarProps & ContextProp) => {
 
     days.forEach((day: XDate, id2: number) => {
       week.push(renderDay(day, id2));
-    }, this);
+    });
 
     if (props.showWeekNumbers) {
       week.unshift(renderWeekNumber(days[days.length - 1].getWeek()));
     }
 
-    return (
-      <View style={style.current.week} key={id}>
+    const result = [
+      <View style={style.current.week} key={`week-row-${id}`}>
         {week}
+      </View>,
+    ];
+
+    if (events && events.length > 0 && currentEvents.length > 0) {
+      let weekWeight = 7;
+      const currentMonthClone = currentMonth.clone();
+      const startMonthDt = currentMonthClone.clone().setDate(1);
+      const endMonthDt = startMonthDt.clone().addMonths(1).addDays(-1);
+      const isStartMonth = startMonthDt.getDay() !== 0
+        && startMonthDt.getWeek() - 1 === days[0].getWeek();
+      const isEndMonth = (endMonthDt.getDay() !== 6 && endMonthDt.getDay() !== 0
+        && endMonthDt.getWeek() === days[days.length - 1].getWeek()) ||
+        (endMonthDt.getDay() === 0 && endMonthDt.getWeek() + 1 === days[days.length - 1].getWeek());
+
+      const eventsThisWeek = currentEvents.filter((event: any) => {
+        const startDt = event.startDate;
+        const endDt = event.endDate;
+        let [wStart, wEnd] = [startDt, endDt].map((date: XDate) => date.getWeek());
+        const currentEndWeek = days[days.length - 1].getWeek();
+        if (startDt.getDay() === 0) {
+          wStart += 1;
+        }
+        if (endDt.getDay() === 0) {
+          wEnd += 1;
+        }
+        const weekRange = Array.from({length: Math.abs(wStart - wEnd) + 1}, (_item: any, index: number) => index + wStart);
+        return weekRange.includes(currentEndWeek);
+      }).reduce((all: any[], event: any) => {
+        let start = event.startDate.clone();
+        let end = event.endDate.clone();
+        let weight = 0;
+
+        if (isStartMonth && start.getTime() < startMonthDt.getTime()) {
+          start = startMonthDt.clone();
+          weight += 0.5;
+        }
+        if (isEndMonth && end.getTime() > endMonthDt.getTime()) {
+          end = endMonthDt.clone();
+          weight += 0.5;
+        }
+        if (start.getTime() < days[0].getTime()) {
+          start = days[0].clone();
+          weight += 0.5;
+        }
+        if (end.getTime() > days[days.length - 1].getTime()) {
+          end = days[days.length - 1].clone();
+          weight += 0.5;
+        }
+        // add gap if last event doesn't abut this one
+        if (all.length > 0 && parseDate(all[all.length - 1].end).getTime() !== start.getTime()) {
+          all.push({
+            isGap: true,
+            weight: Math.abs(parseDate(all[all.length - 1].end).diffDays(start)),
+          });
+        }
+        weight = weight + Math.abs(start.diffDays(end));
+        all.push({
+          ...event,
+          weight,
+        });
+        weekWeight -= weight;
+        return all;
+      }, []);
+
+      if (eventsThisWeek.length > 0) {
+        const eventStyle: any = {
+          flexDirection: 'row',
+          position: 'absolute',
+          top: 25,
+        };
+        const eventStartDt = parseDate(eventsThisWeek[0].start);
+        const eventEndDt = parseDate(eventsThisWeek[eventsThisWeek.length - 1].end);
+        let cellBefore = isStartMonth ? startMonthDt.getDay() : 0;
+        let cellAfter = isEndMonth ? 6 - endMonthDt.getDay() : 0;
+        const weekStartTime = !isStartMonth ? days[0] : startMonthDt;
+        const weekEndTime = !isEndMonth ? days[days.length - 1] : endMonthDt;
+
+        if (weekWeight > 0) {
+          if (eventStartDt.getTime() >= weekStartTime.getTime()) {
+            cellBefore += 0.5;
+            weekWeight -= 0.5;
+          }
+          if (eventEndDt.getTime() <= weekEndTime.getTime()) {
+            cellAfter += 0.5;
+            weekWeight -= 0.5;
+          }
+          if (eventStartDt.getTime() > weekStartTime.getTime()) {
+            const diffStart = Math.abs(eventStartDt.diffDays(weekStartTime));
+            cellBefore += diffStart;
+            weekWeight -= diffStart;
+          }
+          if (eventEndDt.getTime() < weekEndTime.getTime()) {
+            const diffEnd = Math.abs(eventEndDt.diffDays(weekEndTime));
+            cellAfter += diffEnd;
+            weekWeight -= diffEnd;
+          }
+        }
+
+        result.push(
+          <View style={eventStyle} key={`events-${id}`}>
+            {cellBefore > 0 && <View style={{flex: cellBefore, minHeight: 10, zIndex: -1}} />}
+            {eventsThisWeek.map((item: any, i: number) =>
+              item.isGap ? (
+                <View key={`gap-${i}`} style={{flex: item.weight, minHeight: 10}} />
+              ) : (
+                <View
+                  key={item.reservation?.booking_id || `booking-${i}`}
+                  style={[
+                    {flex: item.weight, top: -20, minHeight: 25},
+                    item.currentEdit ? {
+                      zIndex: -1,
+                      opacity: 0.5,
+                      top: Platform.OS === 'android' ? -20 : 0,
+                      height: Platform.OS === 'android' ? 30 : 10,
+                    } : null,
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={[
+                      style.current.markerContainer,
+                      {backgroundColor: item.color, minHeight: 30},
+                      style.current.marker,
+                      item.weekStart === days[0].getWeek() &&
+                      parseDate(item.start).getMonth() === currentMonth.getMonth()
+                        ? style.current.markerStart
+                        : null,
+                      item.weekEnd === days[days.length - 1].getWeek() &&
+                      parseDate(item.end).getMonth() === currentMonth.getMonth()
+                        ? style.current.markerEnd
+                        : null,
+                    ]}
+                    onPress={() => onMarkerPress?.(item)}
+                  >
+                    {item.weekStart === days[0].getWeek() &&
+                    item.flagAt?.[1] === currentMonth.getMonth()
+                      ? item.before
+                      : null}
+                    <Text style={style.current.markerText}>
+                      {item.weight > 1.5
+                        ? item.showTextAt === days[0].getWeek() + 1
+                          ? item.shouldEllipsis
+                            ? ` `
+                            : item.text
+                          : ' '
+                        : ' '}
+                    </Text>
+                    {item.weekEnd === days[days.length - 1].getWeek()
+                      ? item.after
+                      : null}
+                  </TouchableOpacity>
+                </View>
+              )
+            )}
+            {cellAfter > 0 && <View style={{flex: cellAfter, minHeight: 10, zIndex: -1}} />}
+          </View>
+        );
+      }
+    }
+
+    return (
+      <View style={style.current.weekContainer} key={id}>
+        {result}
       </View>
     );
   };

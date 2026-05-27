@@ -16,6 +16,7 @@ export interface EventData {
   end: string;
   text: string;
   color?: string;
+  [key: string]: any;
 }
 export type DateData = {
   year: number;

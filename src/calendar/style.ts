@@ -20,25 +20,35 @@ export default function getStyle(theme: Theme = {}) {
     monthView: {
       backgroundColor: appStyle.calendarBackground
     },
+    weekContainer: {
+      marginTop: 7,
+      marginBottom: 7,
+    },
     week: {
       marginVertical: appStyle.weekVerticalMargin,
       flexDirection: 'row',
       justifyContent: 'space-around'
     },
     marker: {
-      width: '100%',
-      height: 18,
-      borderRadius: 2,
-      justifyContent: 'center',
+      flexDirection: 'row',
+    },
+    markerContainer: {
+      flex: 1,
+      paddingVertical: 3,
       paddingHorizontal: 2,
-      marginTop: 1,
-      marginBottom: 1
     },
     markerText: {
-      color: 'white',
-      fontSize: 10,
-      fontWeight: '600',
-      textAlign: 'left'
+      fontSize: 14,
+      marginLeft: 2,
+      color: '#fff',
+    },
+    markerStart: {
+      borderBottomLeftRadius: 5,
+      marginLeft: 9,
+    },
+    markerEnd: {
+      borderTopRightRadius: 5,
+      marginRight: 9,
     },
     ...(theme['stylesheet.calendar.main'] || {})
   });
