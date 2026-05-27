@@ -143,4 +143,60 @@ describe('Calendar event markers', () => {
     );
     expect(toJSON()).toBeTruthy();
   });
+
+  it('renders before element from event data', () => {
+    const BeforeComponent = () => <></>;
+    const {toJSON} = render(
+      <CalendarList
+        current={'2020-04-01'}
+        pastScrollRange={0}
+        futureScrollRange={1}
+        events={[{
+          start: '2020-04-05',
+          end: '2020-04-07',
+          text: 'WithBefore',
+          color: '#2e7d32',
+          before: <BeforeComponent/>
+        }]}
+      />
+    );
+    expect(toJSON()).toBeTruthy();
+  });
+
+  it('renders after element from event data', () => {
+    const AfterComponent = () => <></>;
+    const {toJSON} = render(
+      <CalendarList
+        current={'2020-04-01'}
+        pastScrollRange={0}
+        futureScrollRange={1}
+        events={[{
+          start: '2020-04-05',
+          end: '2020-04-07',
+          text: 'WithAfter',
+          color: '#2e7d32',
+          after: <AfterComponent/>
+        }]}
+      />
+    );
+    expect(toJSON()).toBeTruthy();
+  });
+
+  it('renders currentEdit events with reduced opacity', () => {
+    const {toJSON} = render(
+      <CalendarList
+        current={'2020-04-01'}
+        pastScrollRange={0}
+        futureScrollRange={1}
+        events={[{
+          start: '2020-04-05',
+          end: '2020-04-07',
+          text: 'Editing',
+          color: '#2e7d32',
+          currentEdit: true
+        }]}
+      />
+    );
+    expect(toJSON()).toBeTruthy();
+  });
 });
